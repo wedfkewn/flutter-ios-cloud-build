@@ -1,0 +1,58 @@
+name: iOS Cloud Build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    name: Build unsigned iOS IPA
+    runs-on: macos-14
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          channel: stable
+          cache: true
+
+      - name: Generate iOS native scaffolding
+        # flutter create regenerates lib/, test/, pubspec.yaml. Back ours up,
+        # create the iOS platform files, then restore our source before build.
+        run: |
+          mkdir -p /tmp/app-src
+          cp lib/main.dart /tmp/app-src/main.dart
+          cp test/widget_test.dart /tmp/app-src/widget_test.dart
+          cp pubspec.yaml /tmp/app-src/pubspec.yaml
+          cp analysis_options.yaml /tmp/app-src/analysis_options.yaml
+          flutter create --platforms ios --org com.example --project-name ios_build_demo .
+          cp /tmp/app-src/main.dart lib/main.dart
+          cp /tmp/app-src/widget_test.dart test/widget_test.dart
+          cp /tmp/app-src/pubspec.yaml pubspec.yaml
+          cp /tmp/app-src/analysis_options.yaml analysis_options.yaml
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build unsigned IPA
+        run: flutter build ipa --release --no-codesign
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-unsigned-${{ github.sha }}
+          path: build/ios/ipa/*.ipa
+          retention-days: 30
+          if-no-files-found: error
